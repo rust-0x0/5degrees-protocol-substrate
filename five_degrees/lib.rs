@@ -95,18 +95,19 @@ mod five_degrees {
                 #[cfg(not(test))]
                 {
                     use erc1155::ContractRef;
-                    const CONTRACT_INIT_BALANCE: u128 = 1000 * 1_000_000_000_000;
-
+                    use erc1155::Erc1155;
+                    // const CONTRACT_INIT_BALANCE: u128 = 1 * 1_000_000_000_000;
+                    let total_balance = Self::env().balance();
                     // let version = self::length;
                     let salt = version.to_le_bytes();
                     let instance_params = ContractRef::new()
-                        .endowment(CONTRACT_INIT_BALANCE)
+                        .endowment(total_balance / 4)
                         .code_hash(code_hash)
                         .salt_bytes(salt)
                         .params();
                     let init_result = ink_env::instantiate_contract(&instance_params);
                     let contract_addr =
-                        init_result.expect("failed at instantiating the `Erc20` contract");
+                        init_result.expect("failed at instantiating the `Erc1155` contract");
 
                     contract.contract_addr = contract_addr;
                 }
@@ -150,75 +151,75 @@ mod five_degrees {
             }
             let followers = self._token_supply.get(&token_id).unwrap_or(0);
             let followings = self._total_balance.get(&token_id).unwrap_or(0);
-          
+
             let json= format!("'name':{},'image':{},'maxSupply':{},'tokenSupply':{},'totalBalance':{} ,'properties':{}",info.name,info.image,info.max_supply,followers,followings,info.properties) ;
             let hexed = self.abi_string_encode_packed(&json);
             let ans = self.base64_encode(&hexed);
-            let dt = format!("data:application/json;base64,{}",ans);
+            let dt = format!("data:application/json;base64,{}", ans);
             self.abi_string_encode_packed(&dt)
         }
-        fn abi_string_encode_packed(&self,items: &String) -> String {
-                let hexed = items.bytes().fold(String::new(), |mut acc, i| {
-                    acc.push_str(format!("{:02x}", i).as_str());
-                    acc
-                });
-                hexed
+        fn abi_string_encode_packed(&self, items: &String) -> String {
+            let hexed = items.bytes().fold(String::new(), |mut acc, i| {
+                acc.push_str(format!("{:02x}", i).as_str());
+                acc
+            });
+            hexed
+        }
+
+        fn base64_encode(&self, buf: &String) -> String {
+            fn byte_to_char(key: u8) -> char {
+                let b64_str: &str =
+                    "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+                b64_str.as_bytes()[key as usize] as _
+            }
+            fn a3_to_a4(a3: &[u8; 3]) -> [u8; 4] {
+                let mut a4: [u8; 4] = [0u8; 4];
+                a4[0] = a3[0] >> 2;
+                a4[1] = (a3[0] << 6) >> 2 | a3[1] >> 4;
+                a4[2] = (a3[1] << 4) >> 2 | a3[2] >> 6;
+                a4[3] = (a3[2] << 2) >> 2;
+                a4
             }
 
-            fn base64_encode(&self,buf: &String) -> String {
-                fn byte_to_char(key: u8) -> char {
-                    let b64_str: &str =
-                        "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+            let buf = buf.as_bytes();
+            let num = buf.len();
+            let mut result = String::new();
+            result.reserve((num + 3) / 3 * 4);
 
-                    b64_str.as_bytes()[key as usize] as _
+            for item in buf.chunks(3) {
+                if item.len() < 3 {
+                    break;
                 }
-                fn a3_to_a4(a3: &[u8; 3]) -> [u8; 4] {
-                    let mut a4: [u8; 4] = [0u8; 4];
-                    a4[0] = a3[0] >> 2;
-                    a4[1] = (a3[0] << 6) >> 2 | a3[1] >> 4;
-                    a4[2] = (a3[1] << 4) >> 2 | a3[2] >> 6;
-                    a4[3] = (a3[2] << 2) >> 2;
-                    a4
-                }
-
-                let buf = buf.as_bytes();
-                let num = buf.len();
-                let mut result = String::new();
-                result.reserve((num + 3) / 3 * 4);
-
-                for item in buf.chunks(3) {
-                    if item.len() < 3 {
-                        break;
-                    }
-                    let item = [item[0], item[1], item[2]];
-                    let a4 = a3_to_a4(&item);
-                    result.push_str(
-                        a4.iter()
-                            .map(|a| byte_to_char(*a))
-                            .collect::<String>()
-                            .as_str(),
-                    );
-                }
-
-                // 处理余下的1/2字节
-                let mut item = [0, 0, 0];
-                let mm = num % 3;
-                if mm == 0 {
-                    return result;
-                }
-                if mm == 1 {
-                    item = [buf[num - 1], 0, 0];
-                } else if mm == 2 {
-                    item = [buf[num - 2], buf[num - 1], 0];
-                }
+                let item = [item[0], item[1], item[2]];
                 let a4 = a3_to_a4(&item);
-                result.push(byte_to_char(a4[0]));
-                result.push(byte_to_char(a4[1]));
-                let b2c = |b: u8| if b == 0 { '=' } else { byte_to_char(b) };
-                result.push(b2c(a4[2]));
-                result.push(b2c(a4[3]));
-                result
+                result.push_str(
+                    a4.iter()
+                        .map(|a| byte_to_char(*a))
+                        .collect::<String>()
+                        .as_str(),
+                );
             }
+
+            // 处理余下的1/2字节
+            let mut item = [0, 0, 0];
+            let mm = num % 3;
+            if mm == 0 {
+                return result;
+            }
+            if mm == 1 {
+                item = [buf[num - 1], 0, 0];
+            } else if mm == 2 {
+                item = [buf[num - 2], buf[num - 1], 0];
+            }
+            let a4 = a3_to_a4(&item);
+            result.push(byte_to_char(a4[0]));
+            result.push(byte_to_char(a4[1]));
+            let b2c = |b: u8| if b == 0 { '=' } else { byte_to_char(b) };
+            result.push(b2c(a4[2]));
+            result.push(b2c(a4[3]));
+            result
+        }
         #[ink(message)]
         pub fn base_info(&self, account: AccountId) -> (String, String) {
             let info = self._uri.get(&account).unwrap_or(TokenURIInfo {
@@ -411,6 +412,8 @@ mod five_degrees {
             assert!(operator != account, "5Degrees: cannot mint your own NFT");
             #[cfg(not(test))]
             {
+                use erc1155::ContractRef;
+                use erc1155::Erc1155;
                 let erc1155_instance: ContractRef =
                     ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                 assert!(
@@ -437,12 +440,14 @@ mod five_degrees {
             }
             #[cfg(not(test))]
             {
+                use erc1155::ContractRef;
+                use erc1155::Erc1155;
                 let mut erc1155_instance: ContractRef =
                     ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                 let _r = erc1155_instance.mint_to(operator, token_id, 1);
             }
             let total_balance = self._total_balance.get(&operator).unwrap_or(0);
-            self._total_balance.insert(&account, &(total_balance + 1));
+            self._total_balance.insert(&operator, &(total_balance + 1));
             self._token_supply.insert(&account, &(token_supply + 1));
             // emit Mint(account, operator, token_id);
             self.env().emit_event(Mint {
@@ -480,6 +485,8 @@ mod five_degrees {
                 }
                 #[cfg(not(test))]
                 {
+                    use erc1155::ContractRef;
+                    use erc1155::Erc1155;
                     let erc1155_instance: ContractRef =
                         ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                     if erc1155_instance.balance_of(operator, token_id) > 0 {
@@ -491,13 +498,15 @@ mod five_degrees {
                     self._uri.insert(&account, &info);
                 }
                 let total_balance = self._total_balance.get(&operator).unwrap_or(0);
-                self._total_balance.insert(&account, &(total_balance + 1));
+                self._total_balance.insert(&operator, &(total_balance + 1));
                 self._token_supply.insert(&account, &(token_supply + 1));
                 ids.push(token_id);
                 amounts.push(1);
             }
             #[cfg(not(test))]
             {
+                use erc1155::ContractRef;
+                use erc1155::Erc1155;
                 let mut erc1155_instance: ContractRef =
                     ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                 let _r = erc1155_instance.mint_to_batch(operator, ids.clone(), amounts);
@@ -524,6 +533,8 @@ mod five_degrees {
             let token_id = self.account_id_to_token_id(account);
             #[cfg(not(test))]
             {
+                use erc1155::ContractRef;
+                use erc1155::Erc1155;
                 let mut erc1155_instance: ContractRef =
                     ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                 assert!(
@@ -564,6 +575,8 @@ mod five_degrees {
                 let token_id = self.account_id_to_token_id(account);
                 #[cfg(not(test))]
                 {
+                    use erc1155::ContractRef;
+                    use erc1155::Erc1155;
                     let erc1155_instance: ContractRef =
                         ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                     if erc1155_instance.balance_of(operator, token_id) == 0 {
@@ -582,6 +595,8 @@ mod five_degrees {
             }
             #[cfg(not(test))]
             {
+                use erc1155::ContractRef;
+                use erc1155::Erc1155;
                 let mut erc1155_instance: ContractRef =
                     ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                 erc1155_instance.burn_batch(operator, ids.clone(), amounts);
@@ -609,6 +624,8 @@ mod five_degrees {
             {
                 let caller = self.env().caller();
                 let caller_id = self.account_id_to_token_id(caller);
+                use erc1155::ContractRef;
+                use erc1155::Erc1155;
                 let mut erc1155_instance: ContractRef =
                     ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                 assert!(
@@ -656,6 +673,8 @@ mod five_degrees {
                 }
                 #[cfg(not(test))]
                 {
+                    use erc1155::ContractRef;
+                    use erc1155::Erc1155;
                     let erc1155_instance: ContractRef =
                         ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                     assert!(
@@ -670,6 +689,8 @@ mod five_degrees {
             {
                 let caller = self.env().caller();
                 let caller_id = self.account_id_to_token_id(caller);
+                use erc1155::ContractRef;
+                use erc1155::Erc1155;
                 let mut erc1155_instance: ContractRef =
                     ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                 assert!(
@@ -898,7 +919,7 @@ mod five_degrees {
             assert_eq!(token_id, 1329227995784915872903807060280344575);
         }
 
-      #[ink::test]
+        #[ink::test]
         fn uri() {
             let burn: AccountId = [255; 32].into();
             let mut five = init_contract();

@@ -15,7 +15,7 @@ mod five_degrees {
 
     use ink_env::format;
     use ink_prelude::string::String;
-    use ink_prelude::vec;
+    // use ink_prelude::vec;
     use ink_prelude::vec::Vec;
     use ink_storage::{
         traits::{PackedLayout, SpreadAllocate, SpreadLayout},
@@ -95,7 +95,6 @@ mod five_degrees {
                 #[cfg(not(test))]
                 {
                     use erc1155::ContractRef;
-                    use erc1155::Erc1155;
                     // const CONTRACT_INIT_BALANCE: u128 = 1 * 1_000_000_000_000;
                     let total_balance = Self::env().balance();
                     // let version = self::length;
@@ -402,9 +401,9 @@ mod five_degrees {
             self._internal_mint(operator, account);
         }
         #[ink(message)]
-        pub fn mint_by_origin(&mut self, operator: AccountId, account: AccountId) {
-            // let operator = self.env().caller();
-            //assert!(self.env().caller_is_origin());
+        pub fn mint_by_origin(&mut self,  account: AccountId) {
+            let operator = self.env().caller();
+            assert!(self.env().caller_is_origin());
             self._internal_mint(operator, account);
         }
         fn _internal_mint(&mut self, operator: AccountId, account: AccountId) {
@@ -441,7 +440,6 @@ mod five_degrees {
             #[cfg(not(test))]
             {
                 use erc1155::ContractRef;
-                use erc1155::Erc1155;
                 let mut erc1155_instance: ContractRef =
                     ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                 let _r = erc1155_instance.mint_to(operator, token_id, 1);
@@ -463,9 +461,9 @@ mod five_degrees {
             self._internal_mint_batch(operator, account);
         }
         #[ink(message)]
-        pub fn mint_batch_by_origin(&mut self, operator: AccountId, accounts: Vec<AccountId>) {
-            // let operator = self.env().caller();
-            // assert!(self.env().caller_is_origin());
+        pub fn mint_batch_by_origin(&mut self, accounts: Vec<AccountId>) {
+            let operator = self.env().caller();
+            assert!(self.env().caller_is_origin());
             self._internal_mint_batch(operator, accounts);
         }
         fn _internal_mint_batch(&mut self, operator: AccountId, accounts: Vec<AccountId>) {
@@ -506,7 +504,6 @@ mod five_degrees {
             #[cfg(not(test))]
             {
                 use erc1155::ContractRef;
-                use erc1155::Erc1155;
                 let mut erc1155_instance: ContractRef =
                     ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                 let _r = erc1155_instance.mint_to_batch(operator, ids.clone(), amounts);
@@ -524,9 +521,9 @@ mod five_degrees {
             self._internal_burn(operator, account);
         }
         #[ink(message)]
-        pub fn burn_by_origin(&mut self, operator: AccountId, account: AccountId) {
-            // let operator = self.env().caller();
-            //assert!(self.env().caller_is_origin());
+        pub fn burn_by_origin(&mut self, account: AccountId) {
+            let operator = self.env().caller();
+            assert!(self.env().caller_is_origin());
             self._internal_burn(operator, account);
         }
         fn _internal_burn(&mut self, operator: AccountId, account: AccountId) {
@@ -563,9 +560,9 @@ mod five_degrees {
             self._internal_burn_batch(operator, account);
         }
         #[ink(message)]
-        pub fn burn_batch_by_origin(&mut self, operator: AccountId, accounts: Vec<AccountId>) {
-            // let operator = self.env().caller();
-            //assert!(self.env().caller_is_origin());
+        pub fn burn_batch_by_origin(&mut self,  accounts: Vec<AccountId>) {
+            let operator = self.env().caller();
+            assert!(self.env().caller_is_origin());
             self._internal_burn_batch(operator, accounts);
         }
         fn _internal_burn_batch(&mut self, operator: AccountId, accounts: Vec<AccountId>) {
@@ -596,7 +593,6 @@ mod five_degrees {
             #[cfg(not(test))]
             {
                 use erc1155::ContractRef;
-                use erc1155::Erc1155;
                 let mut erc1155_instance: ContractRef =
                     ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                 erc1155_instance.burn_batch(operator, ids.clone(), amounts);

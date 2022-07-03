@@ -62,6 +62,7 @@ mod five_degrees {
         _total_balance: Mapping<AccountId, Balance>,
         pay_proxy: AccountId,
         contract_addr: AccountId,
+        test_balances: Mapping<(AccountId, TokenId), Balance>,
     }
     //Web3 Ascii code 87+101+98+51 = 8195
     const _MAX_SUPPLY: u128 = 8195;
@@ -118,7 +119,7 @@ mod five_degrees {
         /// to `false` and vice versa.
         #[ink(message)]
         pub fn set_protocol_info(&mut self, name: String, image: String, properties: String) {
-            let token_id = self.env().account_id(); // self.account_id_to_token_id(self.env().account_id());
+            let token_id = self.env().account_id();
             let mut t = self._uri.get(&token_id).unwrap_or(TokenURIInfo {
                 name: String::new(),
                 image: String::new(),
@@ -132,7 +133,7 @@ mod five_degrees {
             let value = self.uri(token_id);
             self.env().emit_event(Uri {
                 value,
-                token_id: self.account_id_to_token_id(self.env().account_id()),
+                token_id: self.account_id_to_token_id(token_id),
             });
         }
 
@@ -200,7 +201,6 @@ mod five_degrees {
                 );
             }
 
-            // 处理余下的1/2字节
             let mut item = [0, 0, 0];
             let mm = num % 3;
             if mm == 0 {
@@ -232,6 +232,16 @@ mod five_degrees {
             (name, image)
         }
         #[ink(message)]
+        pub fn info(&self, account: AccountId) -> TokenURIInfo {
+            let info = self._uri.get(&account).unwrap_or(TokenURIInfo {
+                name: String::new(),
+                image: String::new(),
+                max_supply: 2022,
+                properties: String::new(),
+            });
+            info
+        }
+        #[ink(message)]
         pub fn metrics(&self, account: AccountId) -> (u128, u128) {
             let token_supply = self._token_supply.get(&account).unwrap_or(0);
             let total_balance = self._total_balance.get(&account).unwrap_or(0);
@@ -241,6 +251,14 @@ mod five_degrees {
         pub fn set_pay_proxy(&mut self, proxy: AccountId) {
             //onlyOwner
             self.pay_proxy = proxy;
+        }
+        #[ink(message)]
+        pub fn pay_proxy(&self) -> AccountId {
+            self.pay_proxy
+        }
+        #[ink(message)]
+        pub fn contract_address(&self) -> AccountId {
+            self.contract_addr
         }
         #[ink(message)]
         pub fn set_info(&mut self, name: String, image: String, properties: String) {
@@ -292,7 +310,6 @@ mod five_degrees {
             _the_max: u128,
         ) -> (AccountId, AccountId, u128) {
             let (token, receiver, amount) = (account, account, new_max);
-            //  (address token, address receiver, uint256 amount) = IPayProxy(PAY_PROXY).queryPay(msg.sender, newMax, theMax);
             (token, receiver, amount)
         }
         fn token_call(
@@ -319,8 +336,6 @@ mod five_degrees {
                 use ink_env::call::{build_call, Call, ExecutionInput};
                 let transferred_value = Balance::default();
                 let gas_limit = 0;
-                // let contracts_selector = [0x80, 0x05, 0xa4, 0x70];
-                // (bool success, bytes memory data) = token.call(abi.encodeWithSelector(0x23b872dd, msg.sender, receiver, amount));
                 let selector = [selector[0], selector[1], selector[2], selector[3]]; // [0x0b, 0x39, 0x6f, 0x18];
                 let result = build_call::<<Self as ::ink_lang::reflect::ContractEnv>::Env>()
                     .call_type(
@@ -401,26 +416,22 @@ mod five_degrees {
             self._internal_mint(operator, account);
         }
         #[ink(message)]
-        pub fn mint_by_origin(&mut self,  account: AccountId) {
+        pub fn mint_by_origin(&mut self, account: AccountId) {
             let operator = self.env().caller();
-            assert!(self.env().caller_is_origin());
+            #[cfg(not(test))]
+            {
+                assert!(self.env().caller_is_origin());
+            }
+
             self._internal_mint(operator, account);
         }
         fn _internal_mint(&mut self, operator: AccountId, account: AccountId) {
             let token_id = self.account_id_to_token_id(account);
             assert!(operator != account, "5Degrees: cannot mint your own NFT");
-            #[cfg(not(test))]
-            {
-                use erc1155::ContractRef;
-                use erc1155::Erc1155;
-                let erc1155_instance: ContractRef =
-                    ink_env::call::FromAccountId::from_account_id(self.contract_addr);
-                assert!(
-                    erc1155_instance.balance_of(operator, token_id) == 0,
-                    "5Degrees: already minted"
-                );
-            }
-
+            assert!(
+                self.balance_of(operator, account) == 0,
+                "5Degrees: already minted"
+            );
             let mut info = self._uri.get(&account).unwrap_or(TokenURIInfo {
                 name: String::new(),
                 image: String::new(),
@@ -443,6 +454,7 @@ mod five_degrees {
                 let mut erc1155_instance: ContractRef =
                     ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                 let _r = erc1155_instance.mint_to(operator, token_id, 1);
+                assert!(_r.is_ok(), "5Degrees: call erc1155 mint_to failed");
             }
             let total_balance = self._total_balance.get(&operator).unwrap_or(0);
             self._total_balance.insert(&operator, &(total_balance + 1));
@@ -463,7 +475,10 @@ mod five_degrees {
         #[ink(message)]
         pub fn mint_batch_by_origin(&mut self, accounts: Vec<AccountId>) {
             let operator = self.env().caller();
-            assert!(self.env().caller_is_origin());
+            #[cfg(not(test))]
+            {
+                assert!(self.env().caller_is_origin());
+            }
             self._internal_mint_batch(operator, accounts);
         }
         fn _internal_mint_batch(&mut self, operator: AccountId, accounts: Vec<AccountId>) {
@@ -481,15 +496,8 @@ mod five_degrees {
                 if operator == account || token_supply + 1 > info.max_supply {
                     continue;
                 }
-                #[cfg(not(test))]
-                {
-                    use erc1155::ContractRef;
-                    use erc1155::Erc1155;
-                    let erc1155_instance: ContractRef =
-                        ink_env::call::FromAccountId::from_account_id(self.contract_addr);
-                    if erc1155_instance.balance_of(operator, token_id) > 0 {
-                        continue;
-                    }
+                if self.balance_of(operator, account) > 0 {
+                    continue;
                 }
                 if info.max_supply == 0 {
                     info.max_supply = _MAX_SUPPLY;
@@ -507,6 +515,7 @@ mod five_degrees {
                 let mut erc1155_instance: ContractRef =
                     ink_env::call::FromAccountId::from_account_id(self.contract_addr);
                 let _r = erc1155_instance.mint_to_batch(operator, ids.clone(), amounts);
+                assert!(_r.is_ok(), "5Degrees: call erc1155 mint_to_batch failed");
             }
             self.env().emit_event(MintBatch {
                 accounts,
@@ -523,7 +532,10 @@ mod five_degrees {
         #[ink(message)]
         pub fn burn_by_origin(&mut self, account: AccountId) {
             let operator = self.env().caller();
-            assert!(self.env().caller_is_origin());
+            #[cfg(not(test))]
+            {
+                assert!(self.env().caller_is_origin());
+            }
             self._internal_burn(operator, account);
         }
         fn _internal_burn(&mut self, operator: AccountId, account: AccountId) {
@@ -538,7 +550,8 @@ mod five_degrees {
                     erc1155_instance.balance_of(operator, token_id) > 0,
                     "5Degrees:  token not existed"
                 );
-                erc1155_instance.burn(operator, token_id, 1);
+                let _r = erc1155_instance.burn(operator, token_id, 1);
+                assert!(_r.is_ok(), "5Degrees: call erc1155 burn failed");
             }
             let token_supply = self._token_supply.get(&account).unwrap_or(0);
             assert!(token_supply > 0, "5Degrees: Insufficient token_supply");
@@ -560,9 +573,12 @@ mod five_degrees {
             self._internal_burn_batch(operator, account);
         }
         #[ink(message)]
-        pub fn burn_batch_by_origin(&mut self,  accounts: Vec<AccountId>) {
+        pub fn burn_batch_by_origin(&mut self, accounts: Vec<AccountId>) {
             let operator = self.env().caller();
-            assert!(self.env().caller_is_origin());
+            #[cfg(not(test))]
+            {
+                assert!(self.env().caller_is_origin());
+            }
             self._internal_burn_batch(operator, accounts);
         }
         fn _internal_burn_batch(&mut self, operator: AccountId, accounts: Vec<AccountId>) {
@@ -570,15 +586,8 @@ mod five_degrees {
             let mut amounts = Vec::new();
             for &account in &accounts {
                 let token_id = self.account_id_to_token_id(account);
-                #[cfg(not(test))]
-                {
-                    use erc1155::ContractRef;
-                    use erc1155::Erc1155;
-                    let erc1155_instance: ContractRef =
-                        ink_env::call::FromAccountId::from_account_id(self.contract_addr);
-                    if erc1155_instance.balance_of(operator, token_id) == 0 {
-                        continue;
-                    }
+                if self.balance_of(operator, account) == 0 {
+                    continue;
                 }
                 let token_supply = self._token_supply.get(&account).unwrap_or(0);
                 assert!(token_supply > 0, "5Degrees: Insufficient token_supply");
@@ -595,7 +604,8 @@ mod five_degrees {
                 use erc1155::ContractRef;
                 let mut erc1155_instance: ContractRef =
                     ink_env::call::FromAccountId::from_account_id(self.contract_addr);
-                erc1155_instance.burn_batch(operator, ids.clone(), amounts);
+                let _r = erc1155_instance.burn_batch(operator, ids.clone(), amounts);
+                assert!(_r.is_ok(), "5Degrees: call erc1155 burn_batch failed");
             }
             self.env().emit_event(BurnBatch {
                 accounts,
@@ -608,7 +618,7 @@ mod five_degrees {
             &mut self,
             from: AccountId,
             to: AccountId,
-            token_id: TokenId,
+            token_id: AccountId,
             value: Balance,
             data: Vec<u8>,
         ) {
@@ -620,6 +630,7 @@ mod five_degrees {
             {
                 let caller = self.env().caller();
                 let caller_id = self.account_id_to_token_id(caller);
+                let token_id = self.account_id_to_token_id(token_id);
                 use erc1155::ContractRef;
                 use erc1155::Erc1155;
                 let mut erc1155_instance: ContractRef =
@@ -633,6 +644,10 @@ mod five_degrees {
                     "5Degrees: receiver hasn't minted sender's NFT"
                 );
                 let _r = erc1155_instance.safe_transfer_from(from, to, token_id, value, data);
+                assert!(
+                    _r.is_ok(),
+                    "5Degrees: call erc1155 safe_transfer_from failed"
+                );
             }
             let total_balance = self._total_balance.get(&from).unwrap_or(0);
             assert!(total_balance >= value, "5Degrees: Insufficient Balance");
@@ -648,7 +663,7 @@ mod five_degrees {
             &mut self,
             from: AccountId,
             to: AccountId,
-            token_ids: Vec<TokenId>,
+            token_ids: Vec<AccountId>,
             values: Vec<Balance>,
             data: Vec<u8>,
         ) {
@@ -669,6 +684,7 @@ mod five_degrees {
                 }
                 #[cfg(not(test))]
                 {
+                    let id = self.account_id_to_token_id(id);
                     use erc1155::ContractRef;
                     use erc1155::Erc1155;
                     let erc1155_instance: ContractRef =
@@ -693,8 +709,16 @@ mod five_degrees {
                     erc1155_instance.balance_of(to, caller_id) > 0,
                     "5Degrees: receiver hasn't minted sender's NFT"
                 );
+                let token_ids: Vec<TokenId> = token_ids
+                    .into_iter()
+                    .map(|id| self.account_id_to_token_id(id))
+                    .collect();
                 let _r =
                     erc1155_instance.safe_batch_transfer_from(from, to, token_ids, values, data);
+                assert!(
+                    _r.is_ok(),
+                    "5Degrees: call erc1155 safe_batch_transfer_from failed"
+                );
             }
             let total_balance = self._total_balance.get(&from).unwrap_or(0);
             assert!(total_balance >= amount, "5Degrees: Insufficient Balance");
@@ -703,6 +727,51 @@ mod five_degrees {
             self._total_balance.insert(&to, &(total_balance + amount));
 
             // Ok(())
+        }
+        #[ink(message)]
+        pub fn balance_of(&self, owner: AccountId, token_id: AccountId) -> Balance {
+            #[cfg(test)]
+            {
+                ink_env::debug_println!("owner at {:?} token_id ({:?})", owner, token_id);
+                let token_id = self.account_id_to_token_id(token_id);
+                self.test_balances.get(&(owner,token_id)).unwrap_or(0)
+            }
+            #[cfg(not(test))]
+            {
+                let token_id = self.account_id_to_token_id(token_id);
+                use erc1155::ContractRef;
+                use erc1155::Erc1155;
+                let erc1155_instance: ContractRef =
+                    ink_env::call::FromAccountId::from_account_id(self.contract_addr);
+                erc1155_instance.balance_of(owner, token_id)
+            }
+        }
+
+        #[ink(message)]
+        pub fn balance_of_batch(
+            &self,
+            owners: Vec<AccountId>,
+            token_ids: Vec<AccountId>,
+        ) -> Vec<Balance> {
+            #[cfg(test)]
+            {
+                ink_env::debug_println!("owner at {:?} token_id ({:?})", owners, token_ids);
+                vec![Balance::default()]
+            }
+            #[cfg(not(test))]
+            {
+                let mut output = Vec::new();
+                for &t in &token_ids {
+                    let token_id = self.account_id_to_token_id(t);
+                    output.push(token_id);
+                }
+
+                use erc1155::ContractRef;
+                use erc1155::Erc1155;
+                let erc1155_instance: ContractRef =
+                    ink_env::call::FromAccountId::from_account_id(self.contract_addr);
+                erc1155_instance.balance_of_batch(owners, output)
+            }
         }
         fn account_id_to_token_id(&self, account: AccountId) -> TokenId {
             let aa: &[u8; 32] = account.as_ref();
@@ -728,7 +797,292 @@ mod five_degrees {
         use super::*;
 
         /// Imports `ink_lang` so we can use `#[ink::test]`.
+        use ink_env::Clear;
         use ink_lang as ink;
+
+        type Event = <erc1155::Contract as ::ink_lang::reflect::ContractEventBase>::Type;
+
+        fn assert_uri_event(
+            event: &ink_env::test::EmittedEvent,
+            expected_value: ink_prelude::string::String,
+            expected_token_id: TokenId,
+        ) {
+            let decoded_event = <Event as scale::Decode>::decode(&mut &event.data[..])
+                .expect("encountered invalid contract event data buffer");
+            if let Event::Uri(Uri { value, token_id }) = decoded_event {
+                assert_eq!(value, expected_value, "encountered invalid Uri.value");
+                assert_eq!(
+                    token_id, expected_token_id,
+                    "encountered invalid Uri.token_id"
+                );
+            } else {
+                panic!("encountered unexpected event kind: expected a Uri event")
+            }
+            let expected_topics = vec![
+                encoded_into_hash(&PrefixedValue {
+                    value: b"Contract::Uri",
+                    prefix: b"",
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::Uri::token_id",
+                    value: &expected_token_id,
+                }),
+            ];
+
+            let topics = event.topics.clone();
+            for (n, (actual_topic, expected_topic)) in
+                topics.iter().zip(expected_topics).enumerate()
+            {
+                let mut topic_hash = Hash::clear();
+                let len = actual_topic.len();
+                topic_hash.as_mut()[0..len].copy_from_slice(&actual_topic[0..len]);
+
+                assert_eq!(
+                    topic_hash, expected_topic,
+                    "encountered invalid topic at {}",
+                    n
+                );
+            }
+        }
+
+        fn assert_mint_event(
+            event: &ink_env::test::EmittedEvent,
+            expected_account: AccountId,
+            expected_owner: AccountId,
+            expected_token_id: TokenId,
+        ) {
+            let decoded_event = <Event as scale::Decode>::decode(&mut &event.data[..])
+                .expect("encountered invalid contract event data buffer");
+            if let Event::Mint(Mint {
+                account,
+                owner,
+                token_id,
+            }) = decoded_event
+            {
+                assert_eq!(account, expected_account, "encountered invalid Mint.account");
+                assert_eq!(owner, expected_owner, "encountered invalid Mint.owner");
+                assert_eq!(
+                    token_id, expected_token_id,
+                    "encountered invalid Mint.token_id"
+                );
+            } else {
+                panic!("encountered unexpected event kind: expected a Mint event")
+            }
+            let expected_topics = vec![
+                encoded_into_hash(&PrefixedValue {
+                    value: b"Contract::Mint",
+                    prefix: b"",
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::Mint::account",
+                    value: &expected_account,
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::Mint::owner",
+                    value: &expected_owner,
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::Mint::token_id",
+                    value: &expected_token_id,
+                }),
+            ];
+
+            let topics = event.topics.clone();
+            for (n, (actual_topic, expected_topic)) in
+                topics.iter().zip(expected_topics).enumerate()
+            {
+                let mut topic_hash = Hash::clear();
+                let len = actual_topic.len();
+                topic_hash.as_mut()[0..len].copy_from_slice(&actual_topic[0..len]);
+
+                assert_eq!(
+                    topic_hash, expected_topic,
+                    "encountered invalid topic at {}",
+                    n
+                );
+            }
+        }
+
+        fn assert_mint_batch_event(
+            event: &ink_env::test::EmittedEvent,
+            expected_accounts: Vec<AccountId>,
+            expected_owner: AccountId,
+            expected_token_ids: Vec<TokenId>,
+        ) {
+            let decoded_event = <Event as scale::Decode>::decode(&mut &event.data[..])
+                .expect("encountered invalid contract event data buffer");
+            if let Event::MintBatch(MintBatch {
+                accounts,
+                owner,
+                token_ids,
+            }) = decoded_event
+            {
+                assert_eq!(
+                    accounts, expected_accounts,
+                    "encountered invalid MintBatch.accounts"
+                );
+                assert_eq!(owner, expected_owner, "encountered invalid MintBatch.owner");
+                assert_eq!(
+                    token_ids, expected_token_ids,
+                    "encountered invalid MintBatch.token_ids"
+                );
+            } else {
+                panic!("encountered unexpected event kind: expected a MintBatch event")
+            }
+            let expected_topics = vec![
+                encoded_into_hash(&PrefixedValue {
+                    value: b"Contract::MintBatch",
+                    prefix: b"",
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::MintBatch::accounts",
+                    value: &expected_accounts,
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::MintBatch::owner",
+                    value: &expected_owner,
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::MintBatch::token_ids",
+                    value: &expected_token_ids,
+                }),
+            ];
+
+            let topics = event.topics.clone();
+            for (n, (actual_topic, expected_topic)) in
+                topics.iter().zip(expected_topics).enumerate()
+            {
+                let mut topic_hash = Hash::clear();
+                let len = actual_topic.len();
+                topic_hash.as_mut()[0..len].copy_from_slice(&actual_topic[0..len]);
+
+                assert_eq!(
+                    topic_hash, expected_topic,
+                    "encountered invalid topic at {}",
+                    n
+                );
+            }
+        }
+
+        fn assert_burn_event(
+            event: &ink_env::test::EmittedEvent,
+            expected_account: AccountId,
+            expected_owner: AccountId,
+            expected_token_id: TokenId,
+        ) {
+            let decoded_event = <Event as scale::Decode>::decode(&mut &event.data[..])
+                .expect("encountered invalid contract event data buffer");
+            if let Event::Burn(Burn {
+                account,
+                owner,
+                token_id,
+            }) = decoded_event
+            {
+                assert_eq!(account, expected_account, "encountered invalid Burn.account");
+                assert_eq!(owner, expected_owner, "encountered invalid Burn.owner");
+                assert_eq!(
+                    token_id, expected_token_id,
+                    "encountered invalid Burn.token_id"
+                );
+            } else {
+                panic!("encountered unexpected event kind: expected a Burn event")
+            }
+            let expected_topics = vec![
+                encoded_into_hash(&PrefixedValue {
+                    value: b"Contract::Burn",
+                    prefix: b"",
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::Burn::account",
+                    value: &expected_account,
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::Burn::owner",
+                    value: &expected_owner,
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::Burn::token_id",
+                    value: &expected_token_id,
+                }),
+            ];
+
+            let topics = event.topics.clone();
+            for (n, (actual_topic, expected_topic)) in
+                topics.iter().zip(expected_topics).enumerate()
+            {
+                let mut topic_hash = Hash::clear();
+                let len = actual_topic.len();
+                topic_hash.as_mut()[0..len].copy_from_slice(&actual_topic[0..len]);
+
+                assert_eq!(
+                    topic_hash, expected_topic,
+                    "encountered invalid topic at {}",
+                    n
+                );
+            }
+        }
+
+        fn assert_burn_batch_event(
+            event: &ink_env::test::EmittedEvent,
+            expected_accounts: Vec<AccountId>,
+            expected_owner: AccountId,
+            expected_token_ids: Vec<TokenId>,
+        ) {
+            let decoded_event = <Event as scale::Decode>::decode(&mut &event.data[..])
+                .expect("encountered invalid contract event data buffer");
+            if let Event::BurnBatch(BurnBatch {
+                accounts,
+                owner,
+                token_ids,
+            }) = decoded_event
+            {
+                assert_eq!(
+                    accounts, expected_accounts,
+                    "encountered invalid BurnBatch.accounts"
+                );
+
+                assert_eq!(owner, expected_owner, "encountered invalid BurnBatch.owner");
+                assert_eq!(
+                    token_ids, expected_token_ids,
+                    "encountered invalid BurnBatch.token_ids"
+                );
+            } else {
+                panic!("encountered unexpected event kind: expected a BurnBatch event")
+            }
+            let expected_topics = vec![
+                encoded_into_hash(&PrefixedValue {
+                    value: b"Contract::BurnBatch",
+                    prefix: b"",
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::BurnBatch::accounts",
+                    value: &expected_accounts,
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::BurnBatch::owner",
+                    value: &expected_owner,
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::BurnBatch::token_ids",
+                    value: &expected_token_ids,
+                }),
+            ];
+
+            let topics = event.topics.clone();
+            for (n, (actual_topic, expected_topic)) in
+                topics.iter().zip(expected_topics).enumerate()
+            {
+                let mut topic_hash = Hash::clear();
+                let len = actual_topic.len();
+                topic_hash.as_mut()[0..len].copy_from_slice(&actual_topic[0..len]);
+
+                assert_eq!(
+                    topic_hash, expected_topic,
+                    "encountered invalid topic at {}",
+                    n
+                );
+            }
+        }
 
         fn set_sender(sender: AccountId) {
             ink_env::test::set_caller::<Environment>(sender);
@@ -749,17 +1103,17 @@ mod five_degrees {
         fn charlie() -> AccountId {
             default_accounts().charlie
         }
-        // fn django() -> AccountId {
-        //     default_accounts().django
-        // }
+        fn django() -> AccountId {
+            default_accounts().django
+        }
 
-        // fn eve() -> AccountId {
-        //     default_accounts().eve
-        // }
+        fn eve() -> AccountId {
+            default_accounts().eve
+        }
 
-        // fn frank() -> AccountId {
-        //     default_accounts().frank
-        // }
+        fn frank() -> AccountId {
+            default_accounts().frank
+        }
         fn init_contract() -> FiveDegrees {
             let name = Hash::from([0x99; 32]);
             let mut five = FiveDegrees::new(1, name);
@@ -786,6 +1140,13 @@ mod five_degrees {
                 five.base_info(alice()),
                 (String::from(""), String::from(""))
             );
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
+            let contract = ink_env::account_id::<ink_env::DefaultEnvironment>();
+            let value = five.uri(contract);
+            let toke_id = five.account_id_to_token_id(contract);
+
+            assert_uri_event(&emitted_events[0], value, toke_id);
         }
 
         #[ink::test]
@@ -805,98 +1166,172 @@ mod five_degrees {
         #[ink::test]
         fn set_info() {
             let mut five = init_contract();
+            let operator = alice();
+            set_sender(operator);
             five.set_info(String::from(""), String::from(""), String::from(""));
             assert_eq!(
                 five.base_info(alice()),
                 (String::from(""), String::from(""))
             );
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
+            let value = five.uri(operator);
+            let toke_id = five.account_id_to_token_id(operator);
+
+            assert_uri_event(&emitted_events[0], value, toke_id);
         }
 
         #[ink::test]
         fn increase_max_supply() {
             let mut five = init_contract();
-            let owner = alice();
-            // let operator = bob();
-            // let another_operator = charlie();
-            set_sender(owner);
+            let operator = alice();
+            set_sender(operator);
 
             five.increase_max_supply(9000);
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
+            let value = five.uri(operator);
+            let toke_id = five.account_id_to_token_id(operator);
+
+            assert_uri_event(&emitted_events[0], value, toke_id);
         }
         #[ink::test]
         fn decrease_max_supply() {
             let mut five = init_contract();
-            let owner = alice();
-            // let operator = bob();
-            // let another_operator = charlie();
-            set_sender(owner);
+            let operator = alice();
+            set_sender(operator);
 
             five.decrease_max_supply(1000);
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
+            let value = five.uri(operator);
+            let toke_id = five.account_id_to_token_id(operator);
+
+            assert_uri_event(&emitted_events[0], value, toke_id);
         }
 
         #[ink::test]
         fn minting_tokens_works() {
             let mut five = init_contract();
-            set_sender(alice());
+            let operator = alice();
+            set_sender(operator);
             five.mint(bob());
-            // assert!(.is_ok());
-            // assert_eq!(five.balance_of(alice(), 1), 123);
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
+            let toke_id = five.account_id_to_token_id(bob());
+
+            assert_mint_event(&emitted_events[0], bob(), operator, toke_id);
         }
         #[ink::test]
         fn mint_by_origin_tokens_works() {
             let mut five = init_contract();
-            set_sender(alice());
-            five.mint_by_origin(alice(), bob());
-            // assert!(.is_ok());
-            // assert_eq!(five.balance_of(alice(), 1), 123);
+            let operator = alice();
+            set_sender(operator);
+            five.mint_by_origin(bob());
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
+            let toke_id = five.account_id_to_token_id(bob());
+
+            assert_mint_event(&emitted_events[0],  bob(),operator, toke_id);
         }
 
         #[ink::test]
         fn mint_batch() {
             let mut five = init_contract();
-            set_sender(alice());
-            five.mint_batch(vec![bob(), charlie()]);
+            let operator = alice();
+            set_sender(operator);
+            let accounts_token_ids = vec![bob(), charlie()];
+            five.mint_batch(accounts_token_ids.clone());
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
+            let token_ids: Vec<TokenId> = accounts_token_ids
+                .iter()
+                .map(|&id| five.account_id_to_token_id(id))
+                .collect();
+            assert_mint_batch_event(&emitted_events[0], accounts_token_ids, operator, token_ids);
         }
         #[ink::test]
         fn mint_batch_by_origin() {
             let mut five = init_contract();
-            set_sender(alice());
-            five.mint_batch_by_origin(alice(), vec![bob(), charlie()]);
+            let operator = alice();
+            set_sender(operator);
+            let accounts_token_ids = vec![bob(), charlie()];
+            five.mint_batch_by_origin(accounts_token_ids.clone());
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
+            let token_ids: Vec<TokenId> = accounts_token_ids
+                .iter()
+                .map(|&id| five.account_id_to_token_id(id))
+                .collect();
+            assert_mint_batch_event(&emitted_events[0], accounts_token_ids, operator, token_ids);
         }
 
         #[ink::test]
         fn burning_tokens_works() {
             let mut five = init_contract();
-            set_sender(alice());
+            let operator = alice();
+            set_sender(operator);
             five.burn(bob());
-            // assert!(.is_ok());
-            // assert_eq!(five.balance_of(alice(), 1), 123);
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
+            let toke_id = five.account_id_to_token_id(bob());
+
+            assert_burn_event(&emitted_events[0], bob(), operator, toke_id);
         }
         #[ink::test]
         fn burn_by_origin_tokens_works() {
             let mut five = init_contract();
-            set_sender(alice());
-            five.burn_by_origin(alice(), bob());
-            // assert!(.is_ok());
-            // assert_eq!(five.balance_of(alice(), 1), 123);
+            let operator = alice();
+            set_sender(operator);
+            five.burn_by_origin(bob());
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
+            let toke_id = five.account_id_to_token_id(bob());
+
+            assert_burn_event(&emitted_events[0], bob(), operator, toke_id);
         }
 
         #[ink::test]
         fn burn_batch() {
             let mut five = init_contract();
-            set_sender(alice());
-            five.burn_batch(vec![alice(), charlie()]);
+            let operator = alice();
+            set_sender(operator);
+            let accounts_token_ids = vec![bob(), charlie()];
+            let token_ids: Vec<TokenId> = accounts_token_ids
+                .iter()
+                .map(|&id| five.account_id_to_token_id(id))
+                .collect();
+            five.test_balances.insert((alice(), token_ids[0]), &1);
+            five.test_balances.insert((alice(), token_ids[1]), &1);
+            five.burn_batch(accounts_token_ids.clone());
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
+            assert_burn_batch_event(&emitted_events[0], accounts_token_ids, operator, token_ids);
         }
         #[ink::test]
         fn burn_batch_by_origin() {
             let mut five = init_contract();
-            five.burn_batch_by_origin(alice(), vec![bob(), charlie()]);
+            let operator = alice();
+            set_sender(operator);
+            let accounts_token_ids = vec![bob(), charlie()];
+           let token_ids: Vec<TokenId> = accounts_token_ids
+                .iter()
+                .map(|&id| five.account_id_to_token_id(id))
+                .collect();
+            five.test_balances.insert((alice(), token_ids[0]), &1);
+            five.test_balances.insert((alice(), token_ids[1]), &1);
+            five.burn_batch_by_origin(accounts_token_ids.clone());
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(1, emitted_events.len());
+   
+            assert_burn_batch_event(&emitted_events[0], accounts_token_ids, operator, token_ids);
         }
 
         #[ink::test]
         #[should_panic]
         fn sending_too_many_tokens_fails() {
             let mut five = init_contract();
-            five.safe_transfer_from(bob(), charlie(), 1, 99, vec![]);
+            five.safe_transfer_from(bob(), charlie(), frank(), 99, vec![]);
         }
 
         #[ink::test]
@@ -904,7 +1339,7 @@ mod five_degrees {
             let burn: AccountId = [0; 32].into();
 
             let mut five = init_contract();
-            five.safe_transfer_from(bob(), burn, 1, 1, vec![]);
+            five.safe_transfer_from(bob(), burn, frank(), 1, vec![]);
         }
 
         #[ink::test]
@@ -925,20 +1360,77 @@ mod five_degrees {
         #[ink::test]
         fn can_send_batch_tokens() {
             let mut five = init_contract();
-            five.safe_batch_transfer_from(bob(), charlie(), vec![1, 2], vec![5, 10], vec![]);
+            five.safe_batch_transfer_from(
+                bob(),
+                charlie(),
+                vec![frank(), django()],
+                vec![5, 10],
+                vec![],
+            );
         }
 
         #[ink::test]
         #[should_panic]
         fn rejects_batch_if_lengths_dont_match() {
             let mut five = init_contract();
-            five.safe_batch_transfer_from(bob(), charlie(), vec![1, 2, 3], vec![5], vec![]);
+            five.safe_batch_transfer_from(
+                bob(),
+                charlie(),
+                vec![frank(), eve(), django()],
+                vec![5],
+                vec![],
+            );
         }
 
         #[ink::test]
         fn batch_transfers_fail_if_len_is_zero() {
             let mut five = init_contract();
             five.safe_batch_transfer_from(bob(), charlie(), vec![], vec![], vec![]);
+        }
+
+        /// For calculating the event topic hash.
+        struct PrefixedValue<'a, 'b, T> {
+            pub prefix: &'a [u8],
+            pub value: &'b T,
+        }
+
+        impl<X> scale::Encode for PrefixedValue<'_, '_, X>
+        where
+            X: scale::Encode,
+        {
+            #[inline]
+            fn size_hint(&self) -> usize {
+                self.prefix.size_hint() + self.value.size_hint()
+            }
+
+            #[inline]
+            fn encode_to<T: scale::Output + ?Sized>(&self, dest: &mut T) {
+                self.prefix.encode_to(dest);
+                self.value.encode_to(dest);
+            }
+        }
+
+        fn encoded_into_hash<T>(entity: &T) -> Hash
+        where
+            T: scale::Encode,
+        {
+            use ink_env::{
+                hash::{Blake2x256, CryptoHash, HashOutput},
+                Clear,
+            };
+            let mut result = Hash::clear();
+            let len_result = result.as_ref().len();
+            let encoded = entity.encode();
+            let len_encoded = encoded.len();
+            if len_encoded <= len_result {
+                result.as_mut()[..len_encoded].copy_from_slice(&encoded);
+                return result;
+            }
+            let mut hash_output = <<Blake2x256 as HashOutput>::Type as Default>::default();
+            <Blake2x256 as CryptoHash>::hash(&encoded, &mut hash_output);
+            let copy_len = core::cmp::min(hash_output.len(), len_result);
+            result.as_mut()[0..copy_len].copy_from_slice(&hash_output[0..copy_len]);
+            result
         }
     }
 }

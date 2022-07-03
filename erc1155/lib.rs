@@ -1,6 +1,6 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
-pub use self::erc1155::{Contract,ContractRef};
+pub use self::erc1155::{Contract, ContractRef};
 use ink_env::AccountId;
 use ink_lang as ink;
 use ink_prelude::vec::Vec;
@@ -232,43 +232,43 @@ pub mod erc1155 {
     pub struct Uri {
         pub value: ink_prelude::string::String,
         #[ink(topic)]
-       pub  token_id: TokenId,
+        pub token_id: TokenId,
     }
 
     #[ink(event)]
     pub struct Mint {
         /// The transaction that was confirmed.
         #[ink(topic)]
-       pub  account: AccountId,
+        pub account: AccountId,
         /// The owner that sent the confirmation.
         #[ink(topic)]
-       pub  owner: AccountId,
+        pub owner: AccountId,
         /// The confirmation status after this confirmation was applied.
         #[ink(topic)]
-       pub  token_id: u128,
+        pub token_id: u128,
     }
 
     #[ink(event)]
     pub struct MintBatch {
         /// The transaction that was confirmed.
         #[ink(topic)]
-       pub  accounts: Vec<AccountId>,
+        pub accounts: Vec<AccountId>,
         /// The owner that sent the confirmation.
         #[ink(topic)]
-       pub  owner: AccountId,
+        pub owner: AccountId,
         /// The confirmation status after this confirmation was applied.
         #[ink(topic)]
-       pub  token_ids: Vec<u128>,
+        pub token_ids: Vec<u128>,
     }
 
     #[ink(event)]
     pub struct Burn {
         /// The transaction that was confirmed.
         #[ink(topic)]
-       pub  account: AccountId,
+        pub account: AccountId,
         /// The owner that sent the confirmation.
         #[ink(topic)]
-       pub  owner: AccountId,
+        pub owner: AccountId,
         /// The confirmation status after this confirmation was applied.
         #[ink(topic)]
         pub token_id: u128,
@@ -278,13 +278,13 @@ pub mod erc1155 {
     pub struct BurnBatch {
         /// The transaction that was confirmed.
         #[ink(topic)]
-       pub  accounts: Vec<AccountId>,
+        pub accounts: Vec<AccountId>,
         /// The owner that sent the confirmation.
         #[ink(topic)]
-       pub  owner: AccountId,
+        pub owner: AccountId,
         /// The confirmation status after this confirmation was applied.
         #[ink(topic)]
-       pub  token_ids: Vec<u128>,
+        pub token_ids: Vec<u128>,
     }
 
     /// An ERC-1155 contract.
@@ -407,7 +407,7 @@ pub mod erc1155 {
             Ok(())
         }
         #[ink(message)]
-        pub fn burn(&mut self, from: AccountId, token_id: TokenId, value: Balance) {
+        pub fn burn(&mut self, from: AccountId, token_id: TokenId, value: Balance) -> Result<()> {
             let mut sender_balance = self
                 .balances
                 .get(&(from, token_id))
@@ -423,6 +423,7 @@ pub mod erc1155 {
                 token_id,
                 value,
             });
+            Ok(())
         }
 
         #[ink(message)]
@@ -431,7 +432,7 @@ pub mod erc1155 {
             from: AccountId,
             token_ids: Vec<TokenId>,
             values: Vec<Balance>,
-        ) {
+        ) -> Result<()> {
             let transfers = token_ids.iter().zip(values.iter());
             for (&token_id, &value) in transfers {
                 let mut sender_balance = self
@@ -450,6 +451,7 @@ pub mod erc1155 {
                 token_ids,
                 values,
             });
+            Ok(())
         }
 
         // Helper function for performing single token transfers.
@@ -895,6 +897,250 @@ pub mod erc1155 {
 
             let res = erc.mint(1, 123);
             assert_eq!(res.unwrap_err(), Error::UnexistentToken);
+        }
+        use ink_env::Clear;
+
+        type Event = <Contract as ::ink_lang::reflect::ContractEventBase>::Type;
+
+        fn assert_transfer_single_event(
+            event: &ink_env::test::EmittedEvent,
+             expected_operator: Option<AccountId>,
+            expected_from: Option<AccountId>,
+            expected_to: Option<AccountId>,
+             expected_token_id: TokenId,
+            expected_value: Balance,
+        ) {
+            let decoded_event = <Event as scale::Decode>::decode(&mut &event.data[..])
+                .expect("encountered invalid contract event data buffer");
+            if let Event::TransferSingle(TransferSingle {operator, from, to,token_id, value }) = decoded_event {
+        assert_eq!(operator, expected_operator, "encountered invalid TransferSingle.operator");
+                assert_eq!(from, expected_from, "encountered invalid TransferSingle.from");
+                assert_eq!(to, expected_to, "encountered invalid TransferSingle.to");
+        assert_eq!(token_id, expected_token_id, "encountered invalid TransferSingle.token_id");
+                assert_eq!(value, expected_value, "encountered invalid TransferSingle.value");
+            } else {
+                panic!("encountered unexpected event kind: expected a TransferSingle event")
+            }
+            let expected_topics = vec![
+                encoded_into_hash(&PrefixedValue {
+                    value: b"Contract::TransferSingle",
+                    prefix: b"",
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::TransferSingle::operator",
+                    value: &expected_operator,
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::TransferSingle::from",
+                    value: &expected_from,
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::TransferSingle::to",
+                    value: &expected_to,
+                }),
+
+            ];
+
+            let topics = event.topics.clone();
+            for (n, (actual_topic, expected_topic)) in
+                topics.iter().zip(expected_topics).enumerate()
+            {
+                let mut topic_hash = Hash::clear();
+                let len = actual_topic.len();
+                topic_hash.as_mut()[0..len].copy_from_slice(&actual_topic[0..len]);
+
+                assert_eq!(
+                    topic_hash, expected_topic,
+                    "encountered invalid topic at {}",
+                    n
+                );
+            }
+        }
+
+        fn assert_transfer_batch_event(
+            event: &ink_env::test::EmittedEvent,
+             expected_operator: Option<AccountId>,
+            expected_from: Option<AccountId>,
+            expected_to: Option<AccountId>,
+             expected_token_ids: Vec<TokenId>,
+            expected_values:  Vec<Balance>,
+        ) {
+            let decoded_event = <Event as scale::Decode>::decode(&mut &event.data[..])
+                .expect("encountered invalid contract event data buffer");
+            if let Event::TransferBatch(TransferBatch {operator, from, to,token_ids, values }) = decoded_event {
+        assert_eq!(operator, expected_operator, "encountered invalid TransferBatch.operator");
+                assert_eq!(from, expected_from, "encountered invalid TransferBatch.from");
+                assert_eq!(to, expected_to, "encountered invalid TransferBatch.to");
+        assert_eq!(token_ids, expected_token_ids, "encountered invalid TransferBatch.token_ids");
+                assert_eq!(values, expected_values, "encountered invalid TransferBatch.values");
+            } else {
+                panic!("encountered unexpected event kind: expected a TransferBatch event")
+            }
+            let expected_topics = vec![
+                encoded_into_hash(&PrefixedValue {
+                    value: b"Contract::TransferBatch",
+                    prefix: b"",
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::TransferBatch::operator",
+                    value: &expected_operator,
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::TransferBatch::from",
+                    value: &expected_from,
+                }),
+                encoded_into_hash(&PrefixedValue {
+                    prefix: b"Contract::TransferBatch::to",
+                    value: &expected_to,
+                }),
+
+            ];
+
+            let topics = event.topics.clone();
+            for (n, (actual_topic, expected_topic)) in
+                topics.iter().zip(expected_topics).enumerate()
+            {
+                let mut topic_hash = Hash::clear();
+                let len = actual_topic.len();
+                topic_hash.as_mut()[0..len].copy_from_slice(&actual_topic[0..len]);
+
+                assert_eq!(
+                    topic_hash, expected_topic,
+                    "encountered invalid topic at {}",
+                    n
+                );
+            }
+        }
+
+        #[ink::test]
+        fn minting_to_tokens_works() {
+            let mut erc = Contract::new();
+
+            set_sender(alice());
+
+            assert!(erc.mint_to(bob(),1, 123).is_ok());
+            assert_eq!(erc.balance_of(bob(), 1), 123);
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(emitted_events.len(), 1);
+            assert_transfer_single_event(
+                &emitted_events[0],
+                Some(alice()),
+                None,
+                Some(bob()),
+                1,
+                123,
+            );
+        }
+        #[ink::test]
+        fn can_mint_batch_tokens() {
+            let mut erc = init_contract();
+            assert!(erc
+                .mint_to_batch(bob(), vec![1, 2], vec![5, 10])
+                .is_ok());
+
+            let balances = erc.balance_of_batch(vec![bob()], vec![1, 2]);
+            assert_eq!(balances, vec![5, 10]);
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(emitted_events.len(), 1);
+            assert_transfer_batch_event(
+                &emitted_events[0],
+                Some(alice()),
+                None,
+                Some(bob()),
+                 vec![1, 2],
+                vec![5, 10],
+            );
+        }
+
+         #[ink::test]
+        fn burning_to_tokens_works() {
+            let mut erc = Contract::new();
+
+            set_sender(alice());
+            erc.balances.insert((bob(), 1), &123);
+            assert!(erc.burn(bob(),1, 123).is_ok());
+            assert_eq!(erc.balance_of(bob(), 1), 0);
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(emitted_events.len(), 1);
+            assert_transfer_single_event(
+                &emitted_events[0],
+                Some(alice()),
+                Some(bob()),
+                None,
+                1,
+                123,
+            );
+        }
+        #[ink::test]
+        fn can_burn_batch_tokens() {
+            let mut erc = init_contract();
+            erc.balances.insert((bob(), 1), &5);
+            erc.balances.insert((bob(), 2), &10);
+            assert!(erc
+                .burn_batch(bob(), vec![1, 2], vec![5, 10])
+                .is_ok());
+            let balances = erc.balance_of_batch(vec![bob()], vec![1, 2]);
+            assert_eq!(balances, vec![0, 0]);
+            let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
+            assert_eq!(emitted_events.len(), 1);
+            assert_transfer_batch_event(
+                &emitted_events[0],
+                Some(alice()),
+                Some(bob()),
+                None,
+                vec![1, 2],
+                vec![5, 10],
+            );
+        }
+
+        /// For calculating the event topic hash.
+        struct PrefixedValue<'a, 'b, T> {
+            pub prefix: &'a [u8],
+            pub value: &'b T,
+        }
+
+        impl<X> scale::Encode for PrefixedValue<'_, '_, X>
+        where
+            X: scale::Encode,
+        {
+            #[inline]
+            fn size_hint(&self) -> usize {
+                self.prefix.size_hint() + self.value.size_hint()
+            }
+
+            #[inline]
+            fn encode_to<T: scale::Output + ?Sized>(&self, dest: &mut T) {
+                self.prefix.encode_to(dest);
+                self.value.encode_to(dest);
+            }
+        }
+
+        fn encoded_into_hash<T>(entity: &T) -> Hash
+        where
+            T: scale::Encode,
+        {
+            use ink_env::{
+                hash::{
+                    Blake2x256,
+                    CryptoHash,
+                    HashOutput,
+                },
+                Clear,
+            };
+            let mut result = Hash::clear();
+            let len_result = result.as_ref().len();
+            let encoded = entity.encode();
+            let len_encoded = encoded.len();
+            if len_encoded <= len_result {
+                result.as_mut()[..len_encoded].copy_from_slice(&encoded);
+                return result
+            }
+            let mut hash_output =
+                <<Blake2x256 as HashOutput>::Type as Default>::default();
+            <Blake2x256 as CryptoHash>::hash(&encoded, &mut hash_output);
+            let copy_len = core::cmp::min(hash_output.len(), len_result);
+            result.as_mut()[0..copy_len].copy_from_slice(&hash_output[0..copy_len]);
+            result
         }
     }
 }

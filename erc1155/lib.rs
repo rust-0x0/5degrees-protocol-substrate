@@ -369,6 +369,7 @@ pub mod erc1155 {
         #[ink(message)]
         pub fn mint_to(&mut self, to: AccountId, token_id: TokenId, value: Balance) -> Result<()> {
             let caller = self.env().caller();
+            ensure!(to != AccountId::default(), Error::ZeroAddressTransfer);
             self.balances.insert(&(to, token_id), &value);
 
             // Emit transfer event but with mint semantics
@@ -391,6 +392,8 @@ pub mod erc1155 {
             values: Vec<Balance>,
         ) -> Result<()> {
             let caller = self.env().caller();
+            ensure!(to != AccountId::default(), Error::ZeroAddressTransfer);
+
             let transfers = token_ids.iter().zip(values.iter());
             for (&token_id, &value) in transfers {
                 self.balances.insert(&(to, token_id), &value);
@@ -408,6 +411,12 @@ pub mod erc1155 {
         }
         #[ink(message)]
         pub fn burn(&mut self, from: AccountId, token_id: TokenId, value: Balance) -> Result<()> {
+            ensure!(from != AccountId::default(), Error::ZeroAddressTransfer);
+
+            let caller = self.env().caller();
+            if caller != from {
+                ensure!(self.is_approved_for_all(from, caller), Error::NotApproved);
+            }
             let mut sender_balance = self
                 .balances
                 .get(&(from, token_id))
@@ -433,6 +442,13 @@ pub mod erc1155 {
             token_ids: Vec<TokenId>,
             values: Vec<Balance>,
         ) -> Result<()> {
+            ensure!(from != AccountId::default(), Error::ZeroAddressTransfer);
+
+            let caller = self.env().caller();
+            if caller != from {
+                ensure!(self.is_approved_for_all(from, caller), Error::NotApproved);
+            }
+
             let transfers = token_ids.iter().zip(values.iter());
             for (&token_id, &value) in transfers {
                 let mut sender_balance = self

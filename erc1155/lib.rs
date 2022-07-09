@@ -1,3 +1,5 @@
+// As the on-chain storage fee is taken into consideration, the complete relationship network isn’t stored on-chain, and it needs to be figured out off-chain. Given that 5Degrees completely follows the EIP-1155 protocol, we can quickly index data through TransferSingle and TransferBatch to establish complete relationship network data.
+
 #![cfg_attr(not(feature = "std"), no_std)]
 
 pub use self::erc1155::{Contract, ContractRef};
@@ -190,30 +192,44 @@ pub mod erc1155 {
     /// Indicate that a token transfer has occured.
     ///
     /// This must be emitted even if a zero value transfer occurs.
+    /// While mint (the follow action), parameter from is None, to is follower address, id is serialization of the address being followed.
+    /// While burn (the unfollow action), parameter from is follower's address, to is None, id is serialization of the address being followed.
+    /// eg: value always 1
     #[ink(event)]
     pub struct TransferSingle {
+        /// operator: operator of transaction
         #[ink(topic)]
         operator: Option<AccountId>,
+        /// from: Profile NFT old owner
         #[ink(topic)]
         from: Option<AccountId>,
+        /// to: Profile NFT new owner
         #[ink(topic)]
         to: Option<AccountId>,
+        /// token_id: Profile NFT ID
         token_id: TokenId,
+        /// value: Profile NFT value
         value: Balance,
     }
 
     /// Indicate that a token transfer has occured.
     ///
     /// This must be emitted even if a zero value transfer occurs.
+    /// ids is a set of serializations of addresses being followed.
     #[ink(event)]
     pub struct TransferBatch {
+        /// operator: operator of transaction
         #[ink(topic)]
         operator: Option<AccountId>,
+        /// from: Profile NFT old owner
         #[ink(topic)]
         from: Option<AccountId>,
+        /// to: Profile NFT new owner
         #[ink(topic)]
         to: Option<AccountId>,
+        /// token_ids: Profile NFT ID's list
         token_ids: Vec<TokenId>,
+        /// values: Profile NFT ID value's list
         values: Vec<Balance>,
     }
 
@@ -234,57 +250,60 @@ pub mod erc1155 {
         #[ink(topic)]
         pub token_id: TokenId,
     }
-
+    /// Indicate that a mint event has happened.
     #[ink(event)]
     pub struct Mint {
-        /// The transaction that was confirmed.
+        /// account: Profile NFT new owner
         #[ink(topic)]
         pub account: AccountId,
-        /// The owner that sent the confirmation.
+        /// owner: operator of transaction
         #[ink(topic)]
         pub owner: AccountId,
-        /// The confirmation status after this confirmation was applied.
+        /// token_id: Profile NFT ID
         #[ink(topic)]
         pub token_id: u128,
     }
 
+    /// Indicate that a mintbatch event has happened.
     #[ink(event)]
     pub struct MintBatch {
-        /// The transaction that was confirmed.
+        /// accounts: Profile NFT new owners
         #[ink(topic)]
         pub accounts: Vec<AccountId>,
-        /// The owner that sent the confirmation.
+        /// owner: operator of transaction
         #[ink(topic)]
         pub owner: AccountId,
-        /// The confirmation status after this confirmation was applied.
+        /// token_ids: Profile NFT ID's list
         #[ink(topic)]
         pub token_ids: Vec<u128>,
     }
 
+    /// Indicate that a mintbatch event has happened.
     #[ink(event)]
     pub struct Burn {
-        /// The transaction that was confirmed.
+        /// account: Profile NFT new owner
         #[ink(topic)]
         pub account: AccountId,
-        /// The owner that sent the confirmation.
+        /// owner: operator of transaction
         #[ink(topic)]
         pub owner: AccountId,
-        /// The confirmation status after this confirmation was applied.
+        /// token_id: Profile NFT ID
         #[ink(topic)]
-        pub token_id: u128,
+        pub token_id: TokenId,
     }
 
+    /// Indicate that a mintbatch event has happened.
     #[ink(event)]
     pub struct BurnBatch {
-        /// The transaction that was confirmed.
+        /// accounts: Profile NFT owners
         #[ink(topic)]
         pub accounts: Vec<AccountId>,
-        /// The owner that sent the confirmation.
+        /// owner: operator of transaction
         #[ink(topic)]
         pub owner: AccountId,
-        /// The confirmation status after this confirmation was applied.
+        /// token_ids: Profile NFT ID's list
         #[ink(topic)]
-        pub token_ids: Vec<u128>,
+        pub token_ids: Vec<TokenId>,
     }
 
     /// An ERC-1155 contract.
@@ -366,6 +385,14 @@ pub mod erc1155 {
             Ok(())
         }
 
+        /// Mint a `value` amount of `token_id` tokens to the given account.
+        ///
+        /// The newly minted supply will
+        /// be assigned to the given account.
+        ///
+        /// Note that as implemented anyone can mint tokens. If you were to instantiate
+        /// this contract in a production environment you'd probably want to lock down
+        /// the addresses that are allowed to mint tokens.
         #[ink(message)]
         pub fn mint_to(&mut self, to: AccountId, token_id: TokenId, value: Balance) -> Result<()> {
             let caller = self.env().caller();
@@ -384,6 +411,14 @@ pub mod erc1155 {
             Ok(())
         }
 
+        /// Batch mint these `values` amount of `token_ids` tokens to the given account.
+        ///
+        /// The newly minted supply will
+        /// be assigned to the given account.
+        ///
+        /// Note that as implemented anyone can mint tokens. If you were to instantiate
+        /// this contract in a production environment you'd probably want to lock down
+        /// the addresses that are allowed to mint tokens.
         #[ink(message)]
         pub fn mint_to_batch(
             &mut self,
@@ -409,6 +444,11 @@ pub mod erc1155 {
 
             Ok(())
         }
+        /// Deletes an existing token.
+        /// Deletes `value` tokens on the behalf of `from`.
+        ///
+        /// This can be used to allow a contract to delete tokens on ones behalf and/or
+        /// to charge fees in sub-currencies.
         #[ink(message)]
         pub fn burn(&mut self, from: AccountId, token_id: TokenId, value: Balance) -> Result<()> {
             ensure!(from != AccountId::default(), Error::ZeroAddressTransfer);
@@ -435,6 +475,11 @@ pub mod erc1155 {
             Ok(())
         }
 
+        /// Deletes the existing tokens.
+        /// Deletes `values` tokens on the behalf of `from`.
+        ///
+        /// This can be used to allow a contract to delete tokens on ones behalf and/or
+        /// to charge fees in sub-currencies.
         #[ink(message)]
         pub fn burn_batch(
             &mut self,
@@ -920,20 +965,39 @@ pub mod erc1155 {
 
         fn assert_transfer_single_event(
             event: &ink_env::test::EmittedEvent,
-             expected_operator: Option<AccountId>,
+            expected_operator: Option<AccountId>,
             expected_from: Option<AccountId>,
             expected_to: Option<AccountId>,
-             expected_token_id: TokenId,
+            expected_token_id: TokenId,
             expected_value: Balance,
         ) {
             let decoded_event = <Event as scale::Decode>::decode(&mut &event.data[..])
                 .expect("encountered invalid contract event data buffer");
-            if let Event::TransferSingle(TransferSingle {operator, from, to,token_id, value }) = decoded_event {
-        assert_eq!(operator, expected_operator, "encountered invalid TransferSingle.operator");
-                assert_eq!(from, expected_from, "encountered invalid TransferSingle.from");
+            if let Event::TransferSingle(TransferSingle {
+                operator,
+                from,
+                to,
+                token_id,
+                value,
+            }) = decoded_event
+            {
+                assert_eq!(
+                    operator, expected_operator,
+                    "encountered invalid TransferSingle.operator"
+                );
+                assert_eq!(
+                    from, expected_from,
+                    "encountered invalid TransferSingle.from"
+                );
                 assert_eq!(to, expected_to, "encountered invalid TransferSingle.to");
-        assert_eq!(token_id, expected_token_id, "encountered invalid TransferSingle.token_id");
-                assert_eq!(value, expected_value, "encountered invalid TransferSingle.value");
+                assert_eq!(
+                    token_id, expected_token_id,
+                    "encountered invalid TransferSingle.token_id"
+                );
+                assert_eq!(
+                    value, expected_value,
+                    "encountered invalid TransferSingle.value"
+                );
             } else {
                 panic!("encountered unexpected event kind: expected a TransferSingle event")
             }
@@ -954,7 +1018,6 @@ pub mod erc1155 {
                     prefix: b"Contract::TransferSingle::to",
                     value: &expected_to,
                 }),
-
             ];
 
             let topics = event.topics.clone();
@@ -975,20 +1038,39 @@ pub mod erc1155 {
 
         fn assert_transfer_batch_event(
             event: &ink_env::test::EmittedEvent,
-             expected_operator: Option<AccountId>,
+            expected_operator: Option<AccountId>,
             expected_from: Option<AccountId>,
             expected_to: Option<AccountId>,
-             expected_token_ids: Vec<TokenId>,
-            expected_values:  Vec<Balance>,
+            expected_token_ids: Vec<TokenId>,
+            expected_values: Vec<Balance>,
         ) {
             let decoded_event = <Event as scale::Decode>::decode(&mut &event.data[..])
                 .expect("encountered invalid contract event data buffer");
-            if let Event::TransferBatch(TransferBatch {operator, from, to,token_ids, values }) = decoded_event {
-        assert_eq!(operator, expected_operator, "encountered invalid TransferBatch.operator");
-                assert_eq!(from, expected_from, "encountered invalid TransferBatch.from");
+            if let Event::TransferBatch(TransferBatch {
+                operator,
+                from,
+                to,
+                token_ids,
+                values,
+            }) = decoded_event
+            {
+                assert_eq!(
+                    operator, expected_operator,
+                    "encountered invalid TransferBatch.operator"
+                );
+                assert_eq!(
+                    from, expected_from,
+                    "encountered invalid TransferBatch.from"
+                );
                 assert_eq!(to, expected_to, "encountered invalid TransferBatch.to");
-        assert_eq!(token_ids, expected_token_ids, "encountered invalid TransferBatch.token_ids");
-                assert_eq!(values, expected_values, "encountered invalid TransferBatch.values");
+                assert_eq!(
+                    token_ids, expected_token_ids,
+                    "encountered invalid TransferBatch.token_ids"
+                );
+                assert_eq!(
+                    values, expected_values,
+                    "encountered invalid TransferBatch.values"
+                );
             } else {
                 panic!("encountered unexpected event kind: expected a TransferBatch event")
             }
@@ -1009,7 +1091,6 @@ pub mod erc1155 {
                     prefix: b"Contract::TransferBatch::to",
                     value: &expected_to,
                 }),
-
             ];
 
             let topics = event.topics.clone();
@@ -1034,7 +1115,7 @@ pub mod erc1155 {
 
             set_sender(alice());
 
-            assert!(erc.mint_to(bob(),1, 123).is_ok());
+            assert!(erc.mint_to(bob(), 1, 123).is_ok());
             assert_eq!(erc.balance_of(bob(), 1), 123);
             let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
             assert_eq!(emitted_events.len(), 1);
@@ -1050,9 +1131,7 @@ pub mod erc1155 {
         #[ink::test]
         fn can_mint_batch_tokens() {
             let mut erc = init_contract();
-            assert!(erc
-                .mint_to_batch(bob(), vec![1, 2], vec![5, 10])
-                .is_ok());
+            assert!(erc.mint_to_batch(bob(), vec![1, 2], vec![5, 10]).is_ok());
 
             let balances = erc.balance_of_batch(vec![bob()], vec![1, 2]);
             assert_eq!(balances, vec![5, 10]);
@@ -1063,18 +1142,18 @@ pub mod erc1155 {
                 Some(alice()),
                 None,
                 Some(bob()),
-                 vec![1, 2],
+                vec![1, 2],
                 vec![5, 10],
             );
         }
 
-         #[ink::test]
+        #[ink::test]
         fn burning_to_tokens_works() {
             let mut erc = Contract::new();
 
             set_sender(alice());
             erc.balances.insert((bob(), 1), &123);
-            assert!(erc.burn(bob(),1, 123).is_ok());
+            assert!(erc.burn(bob(), 1, 123).is_ok());
             assert_eq!(erc.balance_of(bob(), 1), 0);
             let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
             assert_eq!(emitted_events.len(), 1);
@@ -1092,9 +1171,7 @@ pub mod erc1155 {
             let mut erc = init_contract();
             erc.balances.insert((bob(), 1), &5);
             erc.balances.insert((bob(), 2), &10);
-            assert!(erc
-                .burn_batch(bob(), vec![1, 2], vec![5, 10])
-                .is_ok());
+            assert!(erc.burn_batch(bob(), vec![1, 2], vec![5, 10]).is_ok());
             let balances = erc.balance_of_batch(vec![bob()], vec![1, 2]);
             assert_eq!(balances, vec![0, 0]);
             let emitted_events = ink_env::test::recorded_events().collect::<Vec<_>>();
@@ -1136,11 +1213,7 @@ pub mod erc1155 {
             T: scale::Encode,
         {
             use ink_env::{
-                hash::{
-                    Blake2x256,
-                    CryptoHash,
-                    HashOutput,
-                },
+                hash::{Blake2x256, CryptoHash, HashOutput},
                 Clear,
             };
             let mut result = Hash::clear();
@@ -1149,10 +1222,9 @@ pub mod erc1155 {
             let len_encoded = encoded.len();
             if len_encoded <= len_result {
                 result.as_mut()[..len_encoded].copy_from_slice(&encoded);
-                return result
+                return result;
             }
-            let mut hash_output =
-                <<Blake2x256 as HashOutput>::Type as Default>::default();
+            let mut hash_output = <<Blake2x256 as HashOutput>::Type as Default>::default();
             <Blake2x256 as CryptoHash>::hash(&encoded, &mut hash_output);
             let copy_len = core::cmp::min(hash_output.len(), len_result);
             result.as_mut()[0..copy_len].copy_from_slice(&hash_output[0..copy_len]);

@@ -59,17 +59,33 @@
 
 #![cfg_attr(not(feature = "std"), no_std)]
 
+use erc1155::TokenId;
+use ink_env::AccountId;
 use ink_lang as ink;
+#[ink::trait_definition]
+pub trait IPayProxy {
+    /// Query your Profile NFT's followers max supply
+    /// newMax:  followers new max supply of Profile NFT
+    /// theMax:  followers the max supply of Profile NFT
+    #[ink(message)]
+    fn query_pay(
+        &self,
+        account: AccountId,
+        new_max: TokenId,
+        _the_max: TokenId,
+    ) -> (AccountId, AccountId, TokenId);
+}
+
 /// Hex space is a Web3 social network protocol . It aims to ena
 /// and form a complete combinable, users-owned decentralized social network.
 #[ink::contract]
 mod hex_space {
+    use crate::IPayProxy;
     use erc1155::{
         erc1155::Burn, erc1155::BurnBatch, erc1155::Mint, erc1155::MintBatch, erc1155::Uri, TokenId,
     };
-    use ink_lang::codegen::EmitEvent;
-
     use ink_env::format;
+    use ink_lang::codegen::EmitEvent;
     use ink_prelude::string::String;
     use ink_prelude::vec::Vec;
     use ink_storage::{
@@ -411,25 +427,13 @@ mod hex_space {
                 } else {
                     self.token_call(
                         token,
-                        [0x0b, 0x39, 0x6f, 0x18].to_vec(),
+                        [0x0b, 0x39, 0x6f, 0x18].to_vec(), //transfer_from
                         account,
                         receiver,
                         amount,
                     );
                 }
             }
-        }
-        /// Query your Profile NFT's followers max supply
-        /// newMax:  followers new max supply of Profile NFT
-        /// theMax:  followers the max supply of Profile NFT
-        fn query_pay(
-            &self,
-            account: AccountId,
-            new_max: TokenId,
-            _the_max: TokenId,
-        ) -> (AccountId, AccountId, TokenId) {
-            let (token, receiver, amount) = (account, account, new_max);
-            (token, receiver, amount)
         }
 
         /// Call selector of the 'token' ERC20 address
@@ -463,7 +467,7 @@ mod hex_space {
                 use ink_env::call::{build_call, Call, ExecutionInput};
                 let transferred_value = Balance::default();
                 let gas_limit = 0;
-                let selector = [selector[0], selector[1], selector[2], selector[3]]; // [0x0b, 0x39, 0x6f, 0x18];
+                let selector = [selector[0], selector[1], selector[2], selector[3]]; // [0x0b, 0x39, 0x6f, 0x18];//transfer_from
                 let result = build_call::<<Self as ::ink_lang::reflect::ContractEnv>::Env>()
                     .call_type(
                         Call::new()
@@ -1020,7 +1024,21 @@ mod hex_space {
             ans
         }
     }
-
+    impl super::IPayProxy for HexSpace {
+        /// Query your Profile NFT's followers max supply
+        /// newMax:  followers new max supply of Profile NFT
+        /// theMax:  followers the max supply of Profile NFT
+        #[ink(message)]
+        fn query_pay(
+            &self,
+            account: AccountId,
+            new_max: TokenId,
+            _the_max: TokenId,
+        ) -> (AccountId, AccountId, TokenId) {
+            let (token, receiver, amount) = (account, account, new_max);
+            (token, receiver, amount)
+        }
+    }
     /// Unit tests in Rust are normally defined within such a `#[cfg(test)]`
     /// module and test functions are marked with a `#[test]` attribute.
     /// The below code is technically just normal Rust code.

@@ -235,7 +235,8 @@ mod hex_space {
             let followers = self._token_supply.get(&token_id).unwrap_or(0);
             let followings = self._total_balance.get(&token_id).unwrap_or(0);
 
-            let json= format!("'name':{},'image':{},'maxSupply':{},'tokenSupply':{},'totalBalance':{} ,'properties':{}",info.name,info.image,info.max_supply,followers,followings,info.properties) ;
+            let json= format!("'name':{},'image':{},'maxSupply':{},'tokenSupply':{},'totalBalance':{} ,'properties':{}",
+                      info.name,info.image,info.max_supply,followers,followings,info.properties) ;
             let hexed = self.abi_string_encode_packed(&json);
             let ans = self.base64_encode(&hexed);
             let dt = format!("data:application/json;base64,{}", ans);
@@ -401,7 +402,6 @@ mod hex_space {
                 if token == AccountId::default() {
                     let value = self.env().transferred_value();
                     assert!(value >= amount, "HexSpace: invalid msg.value");
-                    // payable(receiver).transfer(msg.value);
                     if self.env().transfer(receiver, value).is_err() {
                         panic!(
                     "requested transfer failed. this can be the case if the contract does not\
@@ -435,10 +435,10 @@ mod hex_space {
         /// Call selector of the 'token' ERC20 address
         /// # Fields
         /// token: the address of the ERC20 token contract
-        /// selector:   the interface method of the ERC20 token contract
-        /// account:   the  'account' parameter of the  method of the ERC20 token contract
-        /// receiver:   the  'receiver' parameter of the  method of the ERC20 token contract
-        /// amount:   the 'amount' parameter of the  method of the ERC20 token contract
+        /// selector:the interface method of the ERC20 token contract
+        /// account: the 'account' parameter of the  method of the ERC20 token contract
+        /// receiver: the 'receiver' parameter of the  method of the ERC20 token contract
+        /// amount: the 'amount' parameter of the  method of the ERC20 token contract
         fn token_call(
             &mut self,
             token: AccountId,
@@ -485,6 +485,10 @@ mod hex_space {
         }
         /// increase your Profile NFT's followers max supply
         /// newMax:  followers new max supply of Profile NFT
+        ///
+        /// # Panics
+        ///
+        /// If `new_max` is less than or equal to   `the_max` .
         #[ink(message, payable)]
         pub fn increase_max_supply(&mut self, new_max: u128) {
             let token_id = self.env().caller();
@@ -514,6 +518,10 @@ mod hex_space {
         /// decrease your Profile NFT's followers max supply
         /// # Fields
         /// newMax:  followers new max supply of Profile NFT
+        ///
+        /// # Panics
+        ///
+        /// If `new_max` is greater than or equal to   `the_max` .
         #[ink(message)]
         pub fn decrease_max_supply(&mut self, new_max: u128) {
             let token_id = self.env().caller();
@@ -565,6 +573,12 @@ mod hex_space {
         /// # Fields
         /// operator: caller address
         /// account: followed address
+        ///
+        /// # Panics
+        ///
+        /// If `operator` is  equal to `account` .
+        /// If `operator` aleady  followed `account` .
+        /// If  the token_supply of `account` is greater than or equal to  the max_supply of `account` .
         fn _internal_mint(&mut self, operator: AccountId, account: AccountId) {
             let token_id = self.account_id_to_token_id(account);
             assert!(operator != account, "HexSpace: cannot mint your own NFT");
@@ -695,6 +709,12 @@ mod hex_space {
         /// unfollow which address internal
         /// # Fields
         /// account:  unfollowed address
+        ///
+        /// # Panics
+        ///
+        /// If `operator` does not  follow    `account` .
+        /// If  the token_supply of    `account` is  equal to  zero .
+        /// If  the total_balance of    `operator` is  equal to  zero .
         fn _internal_burn(&mut self, operator: AccountId, account: AccountId) {
             let token_id = self.account_id_to_token_id(account);
             #[cfg(not(test))]
@@ -746,6 +766,11 @@ mod hex_space {
         /// unfollow of batch internal
         /// # Fields
         /// accounts: unfollowed address list
+        ///
+        /// # Panics
+        ///
+        /// If  the token_supply of    `account` is  equal to  zero .
+        /// If  the total_balance of    `operator` is  equal to  zero .
         fn _internal_burn_batch(&mut self, operator: AccountId, accounts: Vec<AccountId>) {
             let mut ids = Vec::new();
             let mut amounts = Vec::new();
@@ -786,6 +811,12 @@ mod hex_space {
         ///
         /// On success a `TransferSingle` event is emitted.
         ///
+        ///
+        /// # Panics
+        ///
+        /// If  the token_id is the follower of `to`.
+        /// If  `from' is not the follower of `to`.
+        /// If  the total_balance of  `from' is less than `value` .
         #[ink(message)]
         pub fn safe_transfer_from(
             &mut self,
@@ -835,6 +866,13 @@ mod hex_space {
         ///
         /// On success a `TransferSingle` event is emitted.
         ///
+        ///
+        /// # Panics
+        ///
+        /// If  the length of `token_ids`  is not equal to  the length of `values`.
+        /// If  the token_id is the follower of `to`.
+        /// If  `from' is not the follower of `to`.
+        /// If  the total_balance of  `from' is less than `value` .
         #[ink(message)]
         pub fn safe_batch_transfer_from(
             &mut self,
@@ -1316,6 +1354,8 @@ mod hex_space {
             default_accounts().frank
         }
         fn init_contract() -> HexSpace {
+            let contract = ink_env::account_id::<ink_env::DefaultEnvironment>();
+            ink_env::test::set_callee::<ink_env::DefaultEnvironment>(contract);
             let name = Hash::from([0x99; 32]);
             let mut hex_space = HexSpace::new(1, name);
             let info = TokenURIInfo {
@@ -1593,6 +1633,68 @@ mod hex_space {
         fn batch_transfers_fail_if_len_is_zero() {
             let mut hex_space = init_contract();
             hex_space.safe_batch_transfer_from(bob(), charlie(), vec![], vec![], vec![]);
+        }
+
+        #[ink::test]
+        fn test_single_char() {
+            let input_str = "a";
+            let expected = "YQ==".to_string();
+
+            let input_data = input_str.to_string();
+            let hex_space = init_contract();
+            let operator = alice();
+            set_sender(operator);
+            assert_eq!(hex_space.base64_encode(&input_data), expected);
+        }
+
+        #[ink::test]
+        fn test_two_chars() {
+            let input_str = "ab";
+            let expected = "YWI=".to_string();
+
+            let input_data = input_str.to_string();
+            let hex_space = init_contract();
+            let operator = alice();
+            set_sender(operator);
+            assert_eq!(hex_space.base64_encode(&input_data), expected);
+        }
+
+        #[ink::test]
+        fn test_three_chars() {
+            let input_str = "abc";
+            let expected = "YWJj".to_string();
+
+            let input_data = input_str.to_string();
+            let hex_space = init_contract();
+            let operator = alice();
+            set_sender(operator);
+            assert_eq!(hex_space.base64_encode(&input_data), expected);
+        }
+
+        #[ink::test]
+        fn tests_short_string() {
+            let input_str = "Hello, world!";
+            let expected = "SGVsbG8sIHdvcmxkIQ==".to_string();
+
+            let input_data = input_str.to_string();
+            let hex_space = init_contract();
+            let operator = alice();
+            set_sender(operator);
+            assert_eq!(hex_space.base64_encode(&input_data), expected);
+        }
+
+        #[ink::test]
+        fn test_longer_string() {
+            let input_str = "And here be a bit longer text. Let's see how it goes!";
+            let expected =
+                "QW5kIGhlcmUgYmUgYSBiaXQgbG9uZ2VyIHRleHQuIExldCdzIHNlZSBob3cgaXQgZ29lcyE="
+                    .to_string();
+
+            let input_data = input_str.to_string();
+            let hex_space = init_contract();
+            let operator = alice();
+            set_sender(operator);
+            assert_eq!(hex_space.base64_encode(&input_data), expected);
         }
 
         /// For calculating the event topic hash.

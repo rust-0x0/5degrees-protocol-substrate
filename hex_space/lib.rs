@@ -1646,7 +1646,7 @@ mod hex_space {
             let operator = django();
             set_sender(operator);
             let account = eve();
-               let accounts_token_ids = vec![account];
+            let accounts_token_ids = vec![account];
             let token_ids: Vec<TokenId> = accounts_token_ids
                 .iter()
                 .map(|&id| hex_space.account_id_to_token_id(id))
@@ -1663,7 +1663,7 @@ mod hex_space {
             let account = eve();
             hex_space._token_supply.insert(&account, &15);
             let account = eve();
-               let accounts_token_ids = vec![account];
+            let accounts_token_ids = vec![account];
             let token_ids: Vec<TokenId> = accounts_token_ids
                 .iter()
                 .map(|&id| hex_space.account_id_to_token_id(id))

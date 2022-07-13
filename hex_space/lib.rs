@@ -815,7 +815,6 @@ mod hex_space {
         ///
         /// On success a `TransferSingle` event is emitted.
         ///
-        ///
         /// # Panics
         ///
         /// If  the token_id is the follower of `to`.
@@ -870,7 +869,6 @@ mod hex_space {
         ///
         /// On success a `TransferSingle` event is emitted.
         ///
-        ///
         /// # Panics
         ///
         /// If  the length of `token_ids`  is not equal to  the length of `values`.
@@ -891,7 +889,7 @@ mod hex_space {
                 ink_env::debug_println!("to: {:?} data{:?}", to, data);
             }
             assert!(
-                token_ids.len() == values.len(),
+                token_ids.len() > 0 && token_ids.len() == values.len(),
                 "HexSpace: length of ids and amounts mismatch",
             );
             let mut amount = 0;
@@ -1455,6 +1453,15 @@ mod hex_space {
             assert_uri_event(&emitted_events[0], value, toke_id);
         }
         #[ink::test]
+        #[should_panic]
+        fn increase_max_supply_fail() {
+            let mut hex_space = init_contract();
+            let operator = alice();
+            set_sender(operator);
+
+            hex_space.increase_max_supply(2021);
+        }
+        #[ink::test]
         fn decrease_max_supply() {
             let mut hex_space = init_contract();
             let operator = alice();
@@ -1468,7 +1475,15 @@ mod hex_space {
 
             assert_uri_event(&emitted_events[0], value, toke_id);
         }
+        #[ink::test]
+        #[should_panic]
+        fn decrease_max_supply_fail() {
+            let mut hex_space = init_contract();
+            let operator = alice();
+            set_sender(operator);
 
+            hex_space.decrease_max_supply(2023);
+        }
         #[ink::test]
         fn minting_tokens_works() {
             let mut hex_space = init_contract();
@@ -1480,6 +1495,43 @@ mod hex_space {
             let toke_id = hex_space.account_id_to_token_id(bob());
 
             assert_mint_event(&emitted_events[0], bob(), operator, toke_id);
+        }
+
+        #[ink::test]
+        #[should_panic]
+        fn minting_tokens_fails_if_operator_equal_to_account() {
+            let mut hex_space = init_contract();
+            let operator = alice();
+            set_sender(operator);
+            hex_space.mint(operator);
+        }
+        #[ink::test]
+        #[should_panic]
+        fn minting_tokens_fails() {
+            let mut hex_space = init_contract();
+            let operator = alice();
+            set_sender(operator);
+            let token_id = hex_space.account_id_to_token_id(bob());
+            hex_space.test_balances.insert((alice(), token_id), &1);
+            hex_space.mint(bob());
+        }
+        #[ink::test]
+        #[should_panic]
+        fn minting_tokens_fails_if_total_supply_equal_max_supply() {
+            let mut hex_space = init_contract();
+            let operator = alice();
+            set_sender(operator);
+            hex_space._uri.insert(
+                bob(),
+                &TokenURIInfo {
+                    name: String::new(),
+                    image: String::new(),
+                    max_supply: 2022,
+                    properties: String::new(),
+                },
+            );
+            hex_space._token_supply.insert(bob(), &2022);
+            hex_space.mint(bob());
         }
         #[ink::test]
         fn mint_by_origin_tokens_works() {
@@ -1537,6 +1589,26 @@ mod hex_space {
 
             assert_burn_event(&emitted_events[0], bob(), operator, toke_id);
         }
+
+        #[ink::test]
+        #[should_panic]
+        fn burning_tokens_fails_if_token_supply_is_zero() {
+            let mut hex_space = init_contract();
+            let operator = django();
+            set_sender(operator);
+            let account = eve();
+            hex_space.burn(account);
+        }
+        #[ink::test]
+        #[should_panic]
+        fn burning_tokens_fails_if_total_balance_is_zero() {
+            let mut hex_space = init_contract();
+            let operator = django();
+            set_sender(operator);
+            let account = eve();
+            hex_space._token_supply.insert(&account, &15);
+            hex_space.burn(account);
+        }
         #[ink::test]
         fn burn_by_origin_tokens_works() {
             let mut hex_space = init_contract();
@@ -1568,6 +1640,38 @@ mod hex_space {
             assert_burn_batch_event(&emitted_events[0], accounts_token_ids, operator, token_ids);
         }
         #[ink::test]
+        #[should_panic]
+        fn burning_batch_tokens_fails_if_token_supply_is_zero() {
+            let mut hex_space = init_contract();
+            let operator = django();
+            set_sender(operator);
+            let account = eve();
+               let accounts_token_ids = vec![account];
+            let token_ids: Vec<TokenId> = accounts_token_ids
+                .iter()
+                .map(|&id| hex_space.account_id_to_token_id(id))
+                .collect();
+            hex_space.test_balances.insert((operator, token_ids[0]), &1);
+            hex_space.burn_batch(accounts_token_ids.clone());
+        }
+        #[ink::test]
+        #[should_panic]
+        fn burning_batch_tokens_fails_if_total_balance_is_zero() {
+            let mut hex_space = init_contract();
+            let operator = django();
+            set_sender(operator);
+            let account = eve();
+            hex_space._token_supply.insert(&account, &15);
+            let account = eve();
+               let accounts_token_ids = vec![account];
+            let token_ids: Vec<TokenId> = accounts_token_ids
+                .iter()
+                .map(|&id| hex_space.account_id_to_token_id(id))
+                .collect();
+            hex_space.test_balances.insert((operator, token_ids[0]), &1);
+            hex_space.burn_batch(accounts_token_ids.clone());
+        }
+        #[ink::test]
         fn burn_batch_by_origin() {
             let mut hex_space = init_contract();
             let operator = alice();
@@ -1594,11 +1698,12 @@ mod hex_space {
         }
 
         #[ink::test]
-        fn sending_tokens_to_zero_address_fails() {
+        #[should_panic]
+        fn sending_tokens_fails_if_insufficient_balance() {
             let burn: AccountId = [0; 32].into();
 
             let mut hex_space = init_contract();
-            hex_space.safe_transfer_from(bob(), burn, frank(), 1, vec![]);
+            hex_space.safe_transfer_from(bob(), burn, frank(), 100, vec![]);
         }
 
         #[ink::test]
@@ -1648,11 +1753,23 @@ mod hex_space {
         }
 
         #[ink::test]
+        #[should_panic]
         fn batch_transfers_fail_if_len_is_zero() {
             let mut hex_space = init_contract();
             hex_space.safe_batch_transfer_from(bob(), charlie(), vec![], vec![], vec![]);
         }
-
+        #[ink::test]
+        #[should_panic]
+        fn batch_transfers_fail_if_balance_insufficient() {
+            let mut hex_space = init_contract();
+            hex_space.safe_batch_transfer_from(
+                bob(),
+                charlie(),
+                vec![frank(), eve(), django()],
+                vec![50, 50, 50],
+                vec![],
+            );
+        }
         #[ink::test]
         fn test_single_char() {
             let input_str = "a";

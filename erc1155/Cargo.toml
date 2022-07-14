@@ -32,6 +32,5 @@ std = [
     "scale/std",
     "scale-info/std",
 ]
-# ink-experimental-engine = ["ink_env/ink-experimental-engine"]
 
 ink-as-dependency = []

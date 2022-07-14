@@ -148,6 +148,8 @@ mod hex_space {
         pay_proxy: AccountId,
         /// Erc1155  instance contract address.
         contract_addr: AccountId,
+        /// The  contract deployer address.
+        owner: AccountId,
         ///  Mapping from owner to token ids for test.
         test_balances: Mapping<(AccountId, TokenId), Balance>,
     }
@@ -172,6 +174,7 @@ mod hex_space {
                 ink_env::debug_println!("version at {:?} code_hash ({:?})", version, code_hash);
             }
             ink_lang::utils::initialize_contract(|contract: &mut Self| {
+                contract.owner = Self::env().caller();
                 contract._uri.insert(
                     Self::env().account_id(),
                     &TokenURIInfo {
@@ -369,7 +372,7 @@ mod hex_space {
         /// Set pay proxy of the given account Id.
         #[ink(message)]
         pub fn set_pay_proxy(&mut self, proxy: AccountId) {
-            //onlyOwner
+            assert!(self.owner == self.env().caller(), "HexSpace: only Owner");
             self.pay_proxy = proxy;
         }
         /// Get pay proxy of the contract.
@@ -1373,6 +1376,7 @@ mod hex_space {
             let contract = ink_env::account_id::<ink_env::DefaultEnvironment>();
             ink_env::test::set_callee::<ink_env::DefaultEnvironment>(contract);
             let name = Hash::from([0x99; 32]);
+            set_sender(alice());
             let mut hex_space = HexSpace::new(1, name);
             let info = TokenURIInfo {
                 name: String::new(),
@@ -1419,7 +1423,13 @@ mod hex_space {
             hex_space.set_pay_proxy(alice());
             assert_eq!(hex_space.pay_proxy, alice());
         }
-
+        #[ink::test]
+        #[should_panic]
+        fn set_pay_proxy_fail_if_not_owner() {
+            let mut hex_space = init_contract();
+            set_sender(bob());
+            hex_space.set_pay_proxy(charlie());
+        }
         #[ink::test]
         fn set_info() {
             let mut hex_space = init_contract();

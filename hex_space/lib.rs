@@ -168,6 +168,7 @@ mod hex_space {
         /// Constructor that initializes the `u32` value to the given `version`.
         /// the `Hash` value to the given `code_hash`.
         #[ink(constructor)]
+        #[cfg_attr(test, allow(unused_variables))]
         pub fn new(version: u32, code_hash: Hash) -> Self {
             #[cfg(test)]
             {
@@ -446,6 +447,7 @@ mod hex_space {
         /// account: the 'account' parameter of the  method of the ERC20 token contract
         /// receiver: the 'receiver' parameter of the  method of the ERC20 token contract
         /// amount: the 'amount' parameter of the  method of the ERC20 token contract
+        #[cfg_attr(test, allow(unused_variables))]
         fn token_call(
             &mut self,
             token: AccountId,
@@ -824,6 +826,7 @@ mod hex_space {
         /// If  `from' is not the follower of `to`.
         /// If  the total_balance of  `from' is less than `value` .
         #[ink(message)]
+        #[cfg_attr(test, allow(unused_variables))]
         pub fn safe_transfer_from(
             &mut self,
             from: AccountId,
@@ -879,6 +882,7 @@ mod hex_space {
         /// If  `from' is not the follower of `to`.
         /// If  the total_balance of  `from' is less than `value` .
         #[ink(message)]
+        #[cfg_attr(test, allow(unused_variables))]
         pub fn safe_batch_transfer_from(
             &mut self,
             from: AccountId,
@@ -955,6 +959,7 @@ mod hex_space {
         /// Query if is following：
         /// Like if A is following B -> balance_of(A,B)
         #[ink(message)]
+        #[cfg_attr(test, allow(unused_variables))]
         pub fn balance_of(&self, owner: AccountId, token_id: AccountId) -> Balance {
             #[cfg(test)]
             {
@@ -982,6 +987,7 @@ mod hex_space {
         /// Query if is following：
         /// Like if A is following B -> balance_of_batch([A],[B])
         #[ink(message)]
+        #[cfg_attr(test, allow(unused_variables))]
         pub fn balance_of_batch(
             &self,
             owners: Vec<AccountId>,

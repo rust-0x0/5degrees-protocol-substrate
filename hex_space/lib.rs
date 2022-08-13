@@ -188,7 +188,7 @@ mod hex_space {
                 #[cfg(not(test))]
                 {
                     use erc1155::ContractRef;
-                    let total_balance = Self::env().balance();
+                    let total_balance = 0;//Self::env().balance();
                     let salt = version.to_le_bytes();
                     let instance_params = ContractRef::new()
                         .endowment(total_balance / 4)

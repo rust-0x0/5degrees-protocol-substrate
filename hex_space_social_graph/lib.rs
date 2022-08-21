@@ -1457,8 +1457,8 @@ mod hex_space {
             // supported (tests end up panicking).
             #[cfg(not(test))]
             {
-                use ink_env::call::{build_call, Call, ExecutionInput, Selector};
                 use crate::ON_ERC_1155_RECEIVED_SELECTOR;
+                use ink_env::call::{build_call, Call, ExecutionInput, Selector};
 
                 // If our recipient is a smart contract we need to see if they accept or
                 // reject this transfer. If they reject it we need to revert the call.

@@ -62,7 +62,7 @@ All contract compilation results are saved in the release directory.
 ## Testing contracts
 Run the tests with:
 ```bash
-cd  hex-space-protocol-substrate/hex-space
+cd hex_space_social_graph
 cargo test
 ```
 

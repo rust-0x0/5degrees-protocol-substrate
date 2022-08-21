@@ -243,13 +243,7 @@ mod hex_space {
     use crate::IPayProxy;
     use crate::Result;
     use crate::TokenId;
-    #[cfg_attr(test, allow(unused_variables))]
-    use crate::ON_ERC_1155_RECEIVED_SELECTOR;
-    // use erc1155::{
-    //     erc1155::Burn, erc1155::BurnBatch, erc1155::Mint, erc1155::MintBatch, erc1155::Uri, TokenId,
-    // };
     use ink_env::format;
-    // use ink_lang::codegen::EmitEvent;
     use ink_prelude::string::String;
     use ink_prelude::vec::Vec;
     use ink_storage::{
@@ -1464,6 +1458,7 @@ mod hex_space {
             #[cfg(not(test))]
             {
                 use ink_env::call::{build_call, Call, ExecutionInput, Selector};
+                use crate::ON_ERC_1155_RECEIVED_SELECTOR;
 
                 // If our recipient is a smart contract we need to see if they accept or
                 // reject this transfer. If they reject it we need to revert the call.
@@ -2022,7 +2017,6 @@ mod hex_space {
         fn init_contract() -> HexSpace {
             let contract = ink_env::account_id::<ink_env::DefaultEnvironment>();
             ink_env::test::set_callee::<ink_env::DefaultEnvironment>(contract);
-            let name = Hash::from([0x99; 32]);
             set_sender(alice());
             let mut hex_space = HexSpace::new();
             let info = TokenURIInfo {

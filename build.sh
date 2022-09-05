@@ -2,8 +2,6 @@
 
 VERSION=0.1
 WORK_DIR=$(cd $(dirname $0); pwd)
-ERC1155_MODULE=erc1155
-HEXSPACE_MODULE=hex_space
 HEXSPACESOCIALGRAPH_MODULE=hex_space_social_graph
 
 function build_module() {
@@ -27,7 +25,5 @@ echo "clean release"
 rm -rf ${WORK_DIR}/release
 mkdir -p ${WORK_DIR}/release
 
-# build_module ${ERC1155_MODULE}
-# build_module ${HEXSPACE_MODULE}
 
 build_module ${HEXSPACESOCIALGRAPH_MODULE}
